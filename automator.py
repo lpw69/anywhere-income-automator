@@ -10,6 +10,7 @@ YOUTUBE_API_KEY      = os.environ["YOUTUBE_API_KEY"]
 ANTHROPIC_API_KEY    = os.environ["ANTHROPIC_API_KEY"]
 BEEHIIV_API_KEY      = os.environ["BEEHIIV_API_KEY"]
 BEEHIIV_PUB_ID       = os.environ["BEEHIIV_PUBLICATION_ID"]
+SUPADATA_API_KEY     = os.environ["SUPADATA_API_KEY"]
 
 DAYS_LOOKBACK        = 7
 MIN_DURATION_MINS    = 8
@@ -79,33 +80,32 @@ def parse_duration_mins(iso):
 
 def get_transcript(video_id):
     """
-    Fetch transcript - handles both youtube-transcript-api v0.x and v1.x.
-    Tries the newer instance-based API first, falls back to the old class method.
+    Fetch transcript via Supadata API.
+    Handles the YouTube cloud IP block that affects direct transcript libraries.
+    https://supadata.ai/youtube-transcript-api
     """
-    from youtube_transcript_api import YouTubeTranscriptApi
-
-    # Try v1.0+ API (instance-based)
     try:
-        api = YouTubeTranscriptApi()
-        if hasattr(api, "fetch"):
-            fetched = api.fetch(video_id)
-            return " ".join(s.text for s in fetched)
-        if hasattr(api, "list"):
-            tlist = api.list(video_id)
-            t = tlist.find_transcript(["en", "en-US", "en-GB"])
-            fetched = t.fetch()
-            return " ".join(s.text for s in fetched)
+        url = "https://api.supadata.ai/v1/youtube/transcript"
+        headers = {"x-api-key": SUPADATA_API_KEY}
+        params = {
+            "url": f"https://www.youtube.com/watch?v={video_id}",
+            "text": "true",  # returns plain text instead of timestamped segments
+        }
+        r = requests.get(url, headers=headers, params=params, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            # Supadata returns {"content": "...", "lang": "en"} when text=true
+            transcript = data.get("content", "")
+            if transcript:
+                return transcript
+            print(f"    Supadata returned empty transcript")
+            return None
+        else:
+            print(f"    Supadata error {r.status_code}: {r.text[:200]}")
+            return None
     except Exception as e:
-        print(f"    v1 API attempt failed: {e}")
-
-    # Fall back to v0.x class method API
-    try:
-        chunks = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US", "en-GB"])
-        return " ".join(c["text"] for c in chunks)
-    except Exception as e:
-        print(f"    v0 API attempt failed: {e}")
-
-    return None
+        print(f"    Transcript error: {e}")
+        return None
 
 
 def find_best_video():
