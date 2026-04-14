@@ -1,0 +1,23 @@
+name: Anywhere Income - Newsletter Automator
+
+on:
+  schedule:
+    - cron: "0 8 * * 1,3,5"
+  workflow_dispatch:
+
+jobs:
+  generate-newsletter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install youtube-transcript-api anthropic requests
+      - run: python automator.py
+        env:
+          YOUTUBE_API_KEY:        ${{ secrets.YOUTUBE_API_KEY }}
+          ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
+          BEEHIIV_API_KEY:        ${{ secrets.BEEHIIV_API_KEY }}
+          BEEHIIV_PUBLICATION_ID: ${{ secrets.BEEHIIV_PUBLICATION_ID }}
