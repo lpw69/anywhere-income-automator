@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Anywhere Income — Newsletter Automator
+Anywhere Income - Newsletter Automator
 """
 
 import os, re, sys, datetime, requests
@@ -146,6 +146,8 @@ def parse_output(raw):
     return subject, "\n".join(body_lines).strip()
 
 
+BOLD_PATTERN = re.compile(r"\*(.+?)\*")
+
 def text_to_html(text):
     parts = []
     for line in text.split("\n"):
@@ -155,7 +157,8 @@ def text_to_html(text):
             parts.append("<!-- AD BREAK -->")
             parts.append("<p>&nbsp;</p>")
         else:
-            parts.append(f"<p>{re.sub(r'\\*(.+?)\\*', r'<strong>\\1</strong>', line)}</p>")
+            formatted = BOLD_PATTERN.sub(r"<strong>\1</strong>", line)
+            parts.append("<p>" + formatted + "</p>")
     return "\n".join(parts)
 
 
