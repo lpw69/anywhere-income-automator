@@ -14,9 +14,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-- run: pip install anthropic requests      - run: python automator.py
+      - run: pip install anthropic requests
+      - run: python automator.py
         env:
           YOUTUBE_API_KEY:        ${{ secrets.YOUTUBE_API_KEY }}
           ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
           BEEHIIV_API_KEY:        ${{ secrets.BEEHIIV_API_KEY }}
           BEEHIIV_PUBLICATION_ID: ${{ secrets.BEEHIIV_PUBLICATION_ID }}
+          SUPADATA_API_KEY:       ${{ secrets.SUPADATA_API_KEY }}
