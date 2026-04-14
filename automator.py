@@ -3,7 +3,8 @@
 Anywhere Income - Newsletter Automator
 """
 
-import os, re, sys, datetime, requests
+import os, re, sys, datetime, requests, smtplib
+from email.mime.text import MIMEText
 import anthropic
 
 YOUTUBE_API_KEY      = os.environ["YOUTUBE_API_KEY"]
@@ -11,6 +12,7 @@ ANTHROPIC_API_KEY    = os.environ["ANTHROPIC_API_KEY"]
 BEEHIIV_API_KEY      = os.environ["BEEHIIV_API_KEY"]
 BEEHIIV_PUB_ID       = os.environ["BEEHIIV_PUBLICATION_ID"]
 SUPADATA_API_KEY     = os.environ["SUPADATA_API_KEY"]
+NOTIFY_EMAIL         = "lewis@underdog-ghostwriting.com"
 
 DAYS_LOOKBACK        = 7
 MIN_DURATION_MINS    = 8
@@ -188,6 +190,7 @@ def post_to_beehiiv(subject, body_text, source_url):
         "Content-Type": "application/json",
     }
     payload = {
+        "title": subject,
         "subject": subject,
         "preview_text": subject[:150],
         "content": {
@@ -203,6 +206,28 @@ def post_to_beehiiv(subject, body_text, source_url):
         print(f"  Beehiiv error {r.status_code}: {r.text[:500]}")
     r.raise_for_status()
     return r.json()
+
+
+def send_notification(subject, source_url, post_id):
+    """Send a plain email notification via GitHub Actions' built-in sendmail."""
+    try:
+        msg = MIMEText(
+            f"A new Anywhere Income newsletter draft is ready to review.\n\n"
+            f"Subject: {subject}\n"
+            f"Source video: {source_url}\n"
+            f"Beehiiv draft ID: {post_id}\n\n"
+            f"Review and publish at: https://app.beehiiv.com/\n",
+            "plain"
+        )
+        msg["Subject"] = f"[Anywhere Income] New draft ready: {subject[:60]}"
+        msg["From"]    = "github-actions@noreply"
+        msg["To"]      = NOTIFY_EMAIL
+
+        with smtplib.SMTP("localhost") as smtp:
+            smtp.sendmail(msg["From"], [NOTIFY_EMAIL], msg.as_string())
+        print(f"  Notification sent to {NOTIFY_EMAIL}")
+    except Exception as e:
+        print(f"  Notification skipped: {e}")
 
 
 def main():
@@ -225,8 +250,12 @@ def main():
     print("\nPosting to Beehiiv...")
     source_url = f"https://youtube.com/watch?v={video['video_id']}"
     result = post_to_beehiiv(subject, body, source_url)
-    print(f"\n[OK] Draft posted. ID: {result.get('data', {}).get('id', 'unknown')}")
+    post_id = result.get("data", {}).get("id", "unknown")
+
+    print(f"\n[OK] Draft posted. ID: {post_id}")
     print(f"     Review at: https://app.beehiiv.com/")
+
+    send_notification(subject, source_url, post_id)
 
 
 if __name__ == "__main__":
