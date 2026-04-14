@@ -79,30 +79,18 @@ def parse_duration_mins(iso):
 
 
 def get_transcript(video_id):
-    """
-    Fetch transcript via Supadata API.
-    Handles the YouTube cloud IP block that affects direct transcript libraries.
-    https://supadata.ai/youtube-transcript-api
-    """
     try:
-        url = "https://api.supadata.ai/v1/youtube/transcript"
-        headers = {"x-api-key": SUPADATA_API_KEY}
-        params = {
-            "url": f"https://www.youtube.com/watch?v={video_id}",
-            "text": "true",  # returns plain text instead of timestamped segments
-        }
-        r = requests.get(url, headers=headers, params=params, timeout=30)
+        r = requests.get(
+            "https://api.supadata.ai/v1/youtube/transcript",
+            headers={"x-api-key": SUPADATA_API_KEY},
+            params={"url": f"https://www.youtube.com/watch?v={video_id}", "text": "true"},
+            timeout=30,
+        )
         if r.status_code == 200:
-            data = r.json()
-            # Supadata returns {"content": "...", "lang": "en"} when text=true
-            transcript = data.get("content", "")
-            if transcript:
-                return transcript
-            print(f"    Supadata returned empty transcript")
-            return None
-        else:
-            print(f"    Supadata error {r.status_code}: {r.text[:200]}")
-            return None
+            transcript = r.json().get("content", "")
+            return transcript if transcript else None
+        print(f"    Supadata error {r.status_code}: {r.text[:200]}")
+        return None
     except Exception as e:
         print(f"    Transcript error: {e}")
         return None
@@ -194,19 +182,29 @@ def text_to_html(text):
 
 
 def post_to_beehiiv(subject, body_text, source_url):
-    r = requests.post(
-        f"https://api.beehiiv.com/v2/publications/{BEEHIIV_PUB_ID}/posts",
-        headers={"Authorization": f"Bearer {BEEHIIV_API_KEY}", "Content-Type": "application/json"},
-        json={
-            "subject": subject,
-            "preview_text": subject,
-            "body": text_to_html(body_text),
-            "status": "draft",
-            "platform": "email",
-            "meta_default_description": f"Auto-drafted from: {source_url}",
+    """
+    Post a draft to Beehiiv via v2 API.
+    Only sends fields confirmed by the API spec to avoid 400 errors.
+    """
+    endpoint = f"https://api.beehiiv.com/v2/publications/{BEEHIIV_PUB_ID}/posts"
+    headers = {
+        "Authorization": f"Bearer {BEEHIIV_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "subject": subject,
+        "preview_text": subject[:150],
+        "content": {
+            "free": {
+                "web": text_to_html(body_text),
+                "email": text_to_html(body_text),
+            }
         },
-        timeout=20,
-    )
+        "status": "draft",
+    }
+    r = requests.post(endpoint, headers=headers, json=payload, timeout=20)
+    if not r.ok:
+        print(f"  Beehiiv error {r.status_code}: {r.text[:500]}")
     r.raise_for_status()
     return r.json()
 
