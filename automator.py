@@ -4,7 +4,7 @@ Anywhere Income - Newsletter Automator
 """
 
 import os, re, sys, datetime, requests
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+from youtube_transcript_api import YouTubeTranscriptApi
 import anthropic
 
 YOUTUBE_API_KEY      = os.environ["YOUTUBE_API_KEY"]
@@ -12,7 +12,7 @@ ANTHROPIC_API_KEY    = os.environ["ANTHROPIC_API_KEY"]
 BEEHIIV_API_KEY      = os.environ["BEEHIIV_API_KEY"]
 BEEHIIV_PUB_ID       = os.environ["BEEHIIV_PUBLICATION_ID"]
 
-DAYS_LOOKBACK        = 4
+DAYS_LOOKBACK        = 7
 MIN_DURATION_MINS    = 8
 MAX_TRANSCRIPT_CHARS = 14000
 
@@ -79,11 +79,14 @@ def parse_duration_mins(iso):
 
 
 def get_transcript(video_id):
+    """Fetch transcript using youtube-transcript-api v1.0+ API."""
     try:
-        chunks = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US", "en-GB"])
-        return " ".join(c["text"] for c in chunks)
-    except (TranscriptsDisabled, NoTranscriptFound):
-        return None
+        api = YouTubeTranscriptApi()
+        # list() returns a TranscriptList; find_transcript() picks best language match
+        transcript_list = api.list(video_id)
+        transcript = transcript_list.find_transcript(["en", "en-US", "en-GB"])
+        fetched = transcript.fetch()
+        return " ".join(snippet.text for snippet in fetched)
     except Exception as e:
         print(f"    Transcript error: {e}")
         return None
@@ -101,6 +104,7 @@ def find_best_video():
             print(f"  {ch['name']}: failed - {e}")
 
     if not all_videos:
+        print("No recent videos found.")
         return None
 
     stats = get_video_stats([v["video_id"] for v in all_videos])
@@ -110,15 +114,26 @@ def find_best_video():
         if vid_id not in stats: continue
         dur = parse_duration_mins(stats[vid_id]["contentDetails"]["duration"])
         if dur < MIN_DURATION_MINS: continue
-        candidates.append({**v, "views": int(stats[vid_id]["statistics"].get("viewCount", 0)), "duration_mins": round(dur, 1)})
+        candidates.append({
+            **v,
+            "views": int(stats[vid_id]["statistics"].get("viewCount", 0)),
+            "duration_mins": round(dur, 1),
+        })
+
+    if not candidates:
+        print("No videos met the minimum duration requirement.")
+        return None
 
     for c in sorted(candidates, key=lambda x: x["views"], reverse=True):
-        print(f"\nTrying: \"{c['title']}\" ({c['views']:,} views)")
+        print(f"\nTrying: \"{c['title']}\" ({c['views']:,} views, {c['duration_mins']} mins)")
         t = get_transcript(c["video_id"])
         if t:
             c["transcript"] = t
+            print(f"  Transcript: {len(t):,} chars")
             return c
         print("  No transcript, trying next...")
+
+    print("No candidates had a usable transcript.")
     return None
 
 
@@ -166,9 +181,14 @@ def post_to_beehiiv(subject, body_text, source_url):
     r = requests.post(
         f"https://api.beehiiv.com/v2/publications/{BEEHIIV_PUB_ID}/posts",
         headers={"Authorization": f"Bearer {BEEHIIV_API_KEY}", "Content-Type": "application/json"},
-        json={"subject": subject, "preview_text": subject, "body": text_to_html(body_text),
-              "status": "draft", "platform": "email",
-              "meta_default_description": f"Auto-drafted from: {source_url}"},
+        json={
+            "subject": subject,
+            "preview_text": subject,
+            "body": text_to_html(body_text),
+            "status": "draft",
+            "platform": "email",
+            "meta_default_description": f"Auto-drafted from: {source_url}",
+        },
         timeout=20,
     )
     r.raise_for_status()
