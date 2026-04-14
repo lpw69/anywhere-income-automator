@@ -17,12 +17,12 @@ MIN_DURATION_MINS    = 8
 MAX_TRANSCRIPT_CHARS = 14000
 
 CHANNELS = [
-    {"name": "Alex Hormozi",  "id": "UCct-f7gu5F2N58Yvgzq5m9Q"},
-    {"name": "Liam Ottley",   "id": "UCDqbMFcSCIqV1EkJoIoagMg"},
-    {"name": "Greg Isenberg", "id": "UCNjPtLWAHvinh_xlBnFAePA"},
-    {"name": "Codie Sanchez", "id": "UC28n3FHeEBe53NfJGpqnxTQ"},
-    {"name": "Noah Kagan",    "id": "UC53UHFmfKeBj1HWLn-Rp4Zw"},
-    {"name": "Dan Koe",       "id": "UCnCikd0s4i9KoDtaHPlK-JA"},
+    {"name": "Alex Hormozi",  "id": "UCUyDOdBWhC1MCxEjC46d-zw"},
+    {"name": "Liam Ottley",   "id": "UCui4jxDaMb53Gdh-AZUTPAg"},
+    {"name": "Greg Isenberg", "id": "UCPjNBjflYl0-HQtUvOx0Ibw"},
+    {"name": "Codie Sanchez", "id": "UC5fI3kxC-ewZ6ZXEYgznM7g"},
+    {"name": "Noah Kagan",    "id": "UCF2v8v8te3_u4xhIQ8tGy1g"},
+    {"name": "Dan Koe",       "id": "UCWXYDYv5STLk-zoxMP2I1Lw"},
 ]
 
 SYSTEM_PROMPT = """You write the Anywhere Income newsletter by Lewis, a British entrepreneur who left corporate IT to build location-independent income.
@@ -182,10 +182,6 @@ def text_to_html(text):
 
 
 def post_to_beehiiv(subject, body_text, source_url):
-    """
-    Post a draft to Beehiiv via v2 API.
-    Only sends fields confirmed by the API spec to avoid 400 errors.
-    """
     endpoint = f"https://api.beehiiv.com/v2/publications/{BEEHIIV_PUB_ID}/posts"
     headers = {
         "Authorization": f"Bearer {BEEHIIV_API_KEY}",
