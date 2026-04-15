@@ -4,23 +4,21 @@ Anywhere Income - Newsletter Automator
 
 Scans YouTube channels, picks the most-viewed recent video,
 fetches the transcript, generates a newsletter draft via Claude,
-and posts it as a GitHub Issue for review.
+and saves it as a markdown file committed to the repo.
 
 Required secrets:
   YOUTUBE_API_KEY
   ANTHROPIC_API_KEY
   SUPADATA_API_KEY
-  GITHUB_TOKEN        (automatically available in GitHub Actions)
+  GITHUB_TOKEN   (auto-provided by GitHub Actions)
 """
 
-import os, re, sys, datetime, requests
+import os, re, sys, datetime, subprocess, requests
 import anthropic
 
 YOUTUBE_API_KEY      = os.environ["YOUTUBE_API_KEY"]
 ANTHROPIC_API_KEY    = os.environ["ANTHROPIC_API_KEY"]
 SUPADATA_API_KEY     = os.environ["SUPADATA_API_KEY"]
-GITHUB_TOKEN         = os.environ["GITHUB_TOKEN"]
-GITHUB_REPO          = os.environ.get("GITHUB_REPOSITORY", "lpw69/anywhere-income-automator")
 
 DAYS_LOOKBACK        = 7
 MIN_DURATION_MINS    = 8
@@ -175,18 +173,16 @@ def parse_output(raw):
     return subject, "\n".join(body_lines).strip()
 
 
-def post_github_issue(subject, body_text, source_url):
-    """Post the draft as a GitHub Issue. GITHUB_TOKEN is auto-provided by Actions."""
-    owner, repo = GITHUB_REPO.split("/")
-    date_str = datetime.datetime.utcnow().strftime("%d %b %Y")
+def save_draft(subject, body_text, source_url):
+    """Write draft to drafts/ folder and commit it to the repo."""
+    date_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    safe_subject = re.sub(r"[^a-z0-9]+", "-", subject.lower())[:60]
+    filename = f"drafts/{date_str}-{safe_subject}.md"
 
-    issue_body = f"""**Source video:** {source_url}
-**Generated:** {date_str}
+    content = f"""# {subject}
 
----
-
-**SUBJECT LINE:**
-{subject}
+**Date:** {date_str}
+**Source:** {source_url}
 
 ---
 
@@ -194,26 +190,21 @@ def post_github_issue(subject, body_text, source_url):
 
 ---
 
-*Copy the draft above into Beehiiv, tweak, and publish. Close this issue when done.*
+*Copy into Beehiiv to review and publish.*
 """
 
-    r = requests.post(
-        f"https://api.github.com/repos/{owner}/{repo}/issues",
-        headers={
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json",
-        },
-        json={
-            "title": f"[Draft] {subject}",
-            "body": issue_body,
-            "labels": ["newsletter-draft"],
-        },
-        timeout=15,
-    )
-    if not r.ok:
-        print(f"  GitHub Issue error {r.status_code}: {r.text[:300]}")
-    r.raise_for_status()
-    return r.json()
+    os.makedirs("drafts", exist_ok=True)
+    with open(filename, "w") as f:
+        f.write(content)
+
+    # Commit and push using the GITHUB_TOKEN already in the environment
+    subprocess.run(["git", "config", "user.name", "Newsletter Bot"], check=True)
+    subprocess.run(["git", "config", "user.email", "bot@noreply"], check=True)
+    subprocess.run(["git", "add", filename], check=True)
+    subprocess.run(["git", "commit", "-m", f"Draft: {subject[:72]}"], check=True)
+    subprocess.run(["git", "push"], check=True)
+
+    return filename
 
 
 def main():
@@ -233,12 +224,13 @@ def main():
         subject = f"Newsletter draft - {video['title'][:60]}"
     print(f"\nSubject: {subject}")
 
-    print("\nPosting GitHub Issue...")
+    print("\nSaving draft to repo...")
     source_url = f"https://youtube.com/watch?v={video['video_id']}"
-    issue = post_github_issue(subject, body, source_url)
+    filename = save_draft(subject, body, source_url)
 
     print(f"\n[OK] Done.")
-    print(f"     Draft issue: {issue.get('html_url')}")
+    print(f"     Draft saved: {filename}")
+    print(f"     View at: https://github.com/lpw69/anywhere-income-automator/tree/main/drafts")
 
 
 if __name__ == "__main__":
