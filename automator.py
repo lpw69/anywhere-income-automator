@@ -4,30 +4,26 @@ Anywhere Income - Newsletter Automator
 
 Scans YouTube channels, picks the most-viewed recent video,
 fetches the transcript, generates a newsletter draft via Claude,
-and emails it to Lewis via Gmail SMTP.
+and posts it as a GitHub Issue for review.
 
 Required secrets:
   YOUTUBE_API_KEY
   ANTHROPIC_API_KEY
   SUPADATA_API_KEY
-  GMAIL_USER          (your Gmail address)
-  GMAIL_APP_PASSWORD  (16-char app password from myaccount.google.com/security)
+  GITHUB_TOKEN        (automatically available in GitHub Actions)
 """
 
-import os, re, sys, datetime, requests, smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import os, re, sys, datetime, requests
 import anthropic
 
-YOUTUBE_API_KEY     = os.environ["YOUTUBE_API_KEY"]
-ANTHROPIC_API_KEY   = os.environ["ANTHROPIC_API_KEY"]
-SUPADATA_API_KEY    = os.environ["SUPADATA_API_KEY"]
-GMAIL_USER          = os.environ["GMAIL_USER"]
-GMAIL_APP_PASSWORD  = os.environ["GMAIL_APP_PASSWORD"]
-NOTIFY_EMAIL        = "lewis@underdog-ghostwriting.com"
+YOUTUBE_API_KEY      = os.environ["YOUTUBE_API_KEY"]
+ANTHROPIC_API_KEY    = os.environ["ANTHROPIC_API_KEY"]
+SUPADATA_API_KEY     = os.environ["SUPADATA_API_KEY"]
+GITHUB_TOKEN         = os.environ["GITHUB_TOKEN"]
+GITHUB_REPO          = os.environ.get("GITHUB_REPOSITORY", "lpw69/anywhere-income-automator")
 
-DAYS_LOOKBACK       = 7
-MIN_DURATION_MINS   = 8
+DAYS_LOOKBACK        = 7
+MIN_DURATION_MINS    = 8
 MAX_TRANSCRIPT_CHARS = 14000
 
 CHANNELS = [
@@ -179,70 +175,45 @@ def parse_output(raw):
     return subject, "\n".join(body_lines).strip()
 
 
-BOLD_PATTERN = re.compile(r"\*(.+?)\*")
+def post_github_issue(subject, body_text, source_url):
+    """Post the draft as a GitHub Issue. GITHUB_TOKEN is auto-provided by Actions."""
+    owner, repo = GITHUB_REPO.split("/")
+    date_str = datetime.datetime.utcnow().strftime("%d %b %Y")
 
-def body_to_html(text):
-    """Convert plain text newsletter body to readable HTML email."""
-    parts = ["<div style='font-family:Georgia,serif;font-size:16px;line-height:1.7;max-width:640px;margin:0 auto;color:#222;'>"]
-    for line in text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        if "--- [AD BREAK] ---" in line:
-            parts.append("<hr style='border:none;border-top:1px solid #ddd;margin:32px 0;'>")
-            parts.append("<p style='color:#999;font-size:13px;text-align:center;'>[AD PLACEMENT]</p>")
-            parts.append("<hr style='border:none;border-top:1px solid #ddd;margin:32px 0;'>")
-        else:
-            formatted = BOLD_PATTERN.sub(r"<strong>\1</strong>", line)
-            parts.append(f"<p style='margin:0 0 16px 0;'>{formatted}</p>")
-    parts.append("</div>")
-    return "\n".join(parts)
+    issue_body = f"""**Source video:** {source_url}
+**Generated:** {date_str}
 
+---
 
-def send_draft_email(subject, body_text, source_url):
-    """Email the full newsletter draft via Gmail SMTP."""
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"[Draft Ready] {subject}"
-    msg["From"]    = GMAIL_USER
-    msg["To"]      = NOTIFY_EMAIL
+**SUBJECT LINE:**
+{subject}
 
-    plain_body = (
-        f"New Anywhere Income newsletter draft is ready.\n\n"
-        f"SUBJECT LINE: {subject}\n"
-        f"SOURCE VIDEO: {source_url}\n\n"
-        f"{'=' * 60}\n\n"
-        f"{body_text}\n\n"
-        f"{'=' * 60}\n"
-        f"Copy the draft above into Beehiiv to review and publish.\n"
+---
+
+{body_text}
+
+---
+
+*Copy the draft above into Beehiiv, tweak, and publish. Close this issue when done.*
+"""
+
+    r = requests.post(
+        f"https://api.github.com/repos/{owner}/{repo}/issues",
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+        },
+        json={
+            "title": f"[Draft] {subject}",
+            "body": issue_body,
+            "labels": ["newsletter-draft"],
+        },
+        timeout=15,
     )
-
-    html_body = f"""
-    <html><body>
-    <div style="font-family:Arial,sans-serif;font-size:14px;color:#333;max-width:700px;margin:0 auto;">
-      <div style="background:#f5f5f5;padding:16px 24px;border-radius:6px;margin-bottom:24px;">
-        <p style="margin:0;font-size:13px;color:#666;">New Anywhere Income draft</p>
-        <p style="margin:4px 0 0;font-size:18px;font-weight:bold;">{subject}</p>
-        <p style="margin:8px 0 0;font-size:12px;color:#999;">Source: <a href="{source_url}">{source_url}</a></p>
-      </div>
-      <div style="border-left:3px solid #c8f542;padding-left:16px;margin-bottom:24px;">
-        <p style="margin:0;font-size:12px;color:#999;text-transform:uppercase;letter-spacing:0.05em;">Newsletter draft</p>
-      </div>
-      {body_to_html(body_text)}
-      <div style="background:#f5f5f5;padding:16px 24px;border-radius:6px;margin-top:32px;font-size:13px;color:#666;">
-        Copy this draft into <a href="https://app.beehiiv.com">Beehiiv</a> to review and publish.
-      </div>
-    </div>
-    </body></html>
-    """
-
-    msg.attach(MIMEText(plain_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        smtp.sendmail(GMAIL_USER, [NOTIFY_EMAIL], msg.as_string())
-
-    print(f"  Draft emailed to {NOTIFY_EMAIL}")
+    if not r.ok:
+        print(f"  GitHub Issue error {r.status_code}: {r.text[:300]}")
+    r.raise_for_status()
+    return r.json()
 
 
 def main():
@@ -262,12 +233,12 @@ def main():
         subject = f"Newsletter draft - {video['title'][:60]}"
     print(f"\nSubject: {subject}")
 
+    print("\nPosting GitHub Issue...")
     source_url = f"https://youtube.com/watch?v={video['video_id']}"
+    issue = post_github_issue(subject, body, source_url)
 
-    print("\nSending draft email...")
-    send_draft_email(subject, body, source_url)
-
-    print(f"\n[OK] Done. Draft emailed to {NOTIFY_EMAIL}")
+    print(f"\n[OK] Done.")
+    print(f"     Draft issue: {issue.get('html_url')}")
 
 
 if __name__ == "__main__":
